@@ -1,0 +1,179 @@
+@name six_lib_1.1
+@persist [E2_NAME, E2_OWNER_NAME]:string
+@persist SOUNDS:table
+@persist HOLOS:table
+@persist EGPO:table EGPI:number
+@strict
+
+E2_NAME       = "[" + entity():getName() + "] "
+E2_OWNER_NAME = "[" + owner():name() + "] "
+E2_OWNER_NAME = E2_OWNER_NAME
+function void fancyPrint(String:string)
+{
+    print( E2_NAME + String )
+}
+
+function void fancyHintDriver(String:string, PilotSeat:entity)
+{
+    PilotSeat:hintDriver(E2_NAME + String, 4)
+}
+
+function void fancyPrintPlayer(Player:entity)
+{
+    print( "[" + Player:name() + "] " )
+}
+
+SOUNDS = table()
+function void sndPlay(Entity:entity, Index:string)
+{
+    Entity:soundPlay(Index, SOUNDS[Index,array][2,number], SOUNDS[Index,array][1,string])
+    soundVolume(Index, SOUNDS[Index,array][5,number])
+}
+
+function void sndPitchLow(Index:string)
+{
+    soundPitch(Index, SOUNDS[Index,array][3,number])
+}
+
+function void sndPitchHigh(Index:string)
+{
+    soundPitch(Index, SOUNDS[Index,array][4,number])
+}
+
+function void sndPitchRNG(Index:string)
+{
+    soundPitch(Index, random(SOUNDS[Index,array][3,number], SOUNDS[Index,array][4,number]))
+}
+
+HOLOS = table()
+HOLOS = HOLOS
+function void holo(Data:table)
+{
+    local Index = Data["Index",number] ?: 1
+    holoCreate(Index)
+    
+    local Parent = Data["Parent",entity] ?: entity()
+    holoParent(Index, Parent)
+    
+    local Pos = Data["Pos",vector] ?: vec(0,0,0)
+    holoPos(Index, Pos)
+    
+    local Ang = Data["Ang",angle] ?: ang(0,0,0)
+    holoAng(Index, Ang)
+    
+    local Model = Data["Model",string] ?: ""
+    holoModel(Index, Model)
+    
+    local Scale = Data["Scale",vector] ?: vec(1,1,1)
+    holoScale(Index, Scale)
+    
+    local Col = Data["Col",vector4] ?: vec4(255,255,255,0)
+    holoColor(Index, Col)
+    
+    local Shading = Data["Shading",number] ?: 0
+    holoDisableShading(Index, Shading)
+    
+    local Shadow = Data["Shadow",number] ?: 1
+    holoShadow(Index, Shadow)
+}
+#[
+holo(
+    table(
+        "Index"   = 1,
+        "Parent"  = entity(),
+        "Pos"     = vec(),
+        "Ang"     = ang(),
+        "Model"   = "",
+        "Scale"   = vec(1,1,1),
+        "Col"     = vec4(255,0,0,255),
+        "Shading" = 1,
+        "Shadow"  = 0
+    )
+)
+]#
+
+EGPO = table()
+EGPB = table()
+EGPI = egpMaxObjects()
+function number egpMake(Name:string)
+{
+    EGPI--
+    EGPO[Name,number] = EGPI
+    return EGPO[Name,number]
+}
+
+function number egpMakeButton(Name:string)
+{
+    EGPB[Name,number] = egpMake(Name)
+    return EGPO[Name,number]
+}
+
+function number egpObj(Name:string)
+{
+    return EGPO[Name,number]
+}
+
+function void egpClearObjects()
+{
+    EGPO:clear()
+    EGPB:clear()
+    EGPI = egpMaxObjects()
+}
+
+#[
+function void egpInit(FilterMode:number)
+{
+    egpClearObjects()
+    EGP:egpClear()
+    EGP:egpDrawTopLeft(1)
+    EGP:egpGlobalFiltering(FilterMode)
+}
+
+event keyPressed(Player:entity, Key:string, Down:number, Bind:string)
+{
+    if(Player == owner() & Key == "mouse_right" & EGP:egpCursor(Player) != vec2(-1,-1))
+    {
+        foreach(Name:string, Button:number = EGPB)
+        {
+            if(EGP:egpObjectContainsPoint(Button, EGP:egpCursor(Player)))
+            {
+                if(ButtonFunc:exists(Name))
+                {
+                    ButtonFunc[Name, function](Down, Button)
+                }
+            }
+        }
+    }
+}
+
+const ButtonFunc = table()
+ButtonFunc["Refresh", function] = function(Status:number, Button:number)
+{
+    if( Status )
+    {
+        EGP:egpColor(Button, vec4(192,192,192,192))
+    }
+    else
+    {
+        egpDrawAll()
+    }
+}
+]#
+
+function number egpCursorInRange(Wirelink:wirelink, Player:entity, Index:number)
+{
+    local Pos_cur = Wirelink:egpCursor(Player)
+    local Pos_min = Wirelink:egpPos(Index)
+    local Pos_max = Pos_min + Wirelink:egpSize(Index)
+    return inrange(Pos_cur, Pos_min, Pos_max)
+}
+
+function angle s_lerp(AngFrom:angle, AngTo:angle, Time:number)
+{
+    return slerp(quat(AngFrom),quat(AngTo), Time):toAngle()
+}
+
+function number scaleNumber(Input:number, In_min:number, In_max:number, Out_min:number, Out_max:number)
+{
+    return ((Input - In_min) / (In_max - In_min)) * (Out_max - Out_min) + Out_min
+}
