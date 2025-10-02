@@ -10,7 +10,7 @@ Download the Project and install into:
 C:\Program Files (x86)\Steam\steamapps\common\GarrysMod\garrysmod\
 
 ## FEATURES
-* Simulates real-world tank turrets work by locking its position to a target vector, without breaking ACF build guidelines
+* Simulates real-world tank turrets work by fixing its aim to a target vector when not moving the mouse
 * Uses RT cam + RT screen to simulate a first person perspective instead of traditional "war thunder" style third person aiming
 * Holo parenting for less physics jank
 * Quaternians for angle calculations to prevent gimbal lock
