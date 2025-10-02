@@ -1,0 +1,350 @@
+@name Tank turret 3.1
+@inputs [Baseplate, Turretplate, Gun, PilotSeat]:entity [RTCam, RTScreen, CamController]:wirelink
+@outputs [RangerCamPos, RangerGunPos]:vector [RangerCamEnt, RangerGunEnt, TargetEnt]:entity
+@persist [CONFIG, CONTROLS, SOUNDS]:table [Lock, Perspective]:number Pilot:entity
+@persist [LerpDo, LerpCur, LerpStart, LerpAnimTime]:number
+@persist [RangerGun, RangerCam]:ranger [RangerCamPos, RangerGunPos]:vector
+@persist [MouseDelta, Mouse]:angle MouseScale:number FOV:number
+@persist [HTurret, HGun, HCam, HLaserGun, HLaserCam]:number
+@persist GunAngPrev:angle [GunYawDelta, GunYawVol, GunYawPitch]:number
+@strict
+
+#include "six_lib_1.1"
+if( dupefinished() | first() )
+{
+    CONFIG = table(
+        "Pitch limit"           = vec2(-20, 15),
+        "Yaw limit"             = vec2(-180, 180),
+        
+        "Turret offset"         = ang(0, 90, 0),
+        "Third person position" = vec(-150, 0, 35),
+        
+        "Rotate speed"          = 5,
+        "Mouse sensitivity"     = 0.20,
+        
+        "Debug"                 = 0
+    )
+    
+    CONTROLS = table(
+        "Lock"        = "f",
+        "Perspective" = "lcontrol",
+        "Zoom in"     = "mouse_5",
+        "Zoom out"    = "mouse_4"
+    )
+    
+    SOUNDS = table(
+        "Lock" = array(
+            "acf_extra/vehiclefx/trans/default_shift.wav",
+            0.58, 80, 100, 0.5
+        ),
+        "Zoom" = array(
+            "Default.Zoom",
+             0.357, 100, 110, 0.25
+        ),
+        "Perspective" = array(
+            "acf_extra/ace/miscellaneous/switches/switch.wav",
+            0.357, 100, 110, 0.15
+        ),
+        "Turret rotate" = array(
+            "acf_extra/tankfx/servo_1.wav",
+            999, 50, 100, 0.25
+        ),
+        "Gun reload" = array(
+            "acf_extra/tankfx/s_arty_reload.wav",
+            5.532, 100, 100, 1
+        ),
+        "Gun up" = array(
+            "acf_extra/tankfx/clunk.wav",
+            0.73,  100, 100, 1
+        )
+    )
+    
+    if( !Baseplate | !Turretplate | !Gun | !PilotSeat | !RTCam:entity() | !RTScreen:entity() | !CamController:entity() )
+    {
+        fancyPrint("Component missing!")
+        exit()
+    }
+    else
+    {
+        rangerPersist(1)
+        findInSphere(Baseplate:pos(), 100)
+        rangerFilter(findToArray())
+        
+        Pilot                             = noentity()
+        Lock                              = 1
+        Perspective                       = 0
+        
+        LerpDo                            = 0
+        LerpCur                           = 0
+        LerpStart                         = curtime()
+        LerpAnimTime                      = CONFIG["Rotate speed",number]
+        
+        Mouse                             = CONFIG["Turret offset",angle]
+        MouseDelta                        = Mouse
+        MouseScale                        = 0.9
+        
+        FOV                               = 90
+        RTCam["Active",number]            = 1
+        RTCam["FOV",number]               = FOV
+        
+        RTScreen["Active",number]         = 1
+        RTScreen["Camera",entity]         = RTCam:entity()
+        
+        CamController["Activated",number] = 0
+        CamController["Parent",entity]    = PilotSeat
+        CamController["Angle",angle]      = CONFIG["Turret offset",angle]
+        
+        HTurret                           = 1
+        HGun                              = 2
+        HCam                              = 3
+        HLaserGun                         = 4
+        HLaserCam                         = 5
+        
+        holoCreate(HTurret)
+        holoParent(HTurret, Baseplate)
+        holoPos(HTurret, Turretplate:pos())
+        holoAng(HTurret, CONFIG["Turret offset",angle])
+        holoColor(HTurret, vec4(255,0,0,128))
+        holoVisible(HTurret, players(), CONFIG["Debug",number])
+        Turretplate:parentTo(holoEntity(HTurret))
+        
+        holoCreate(HGun)
+        holoParent(HGun, HTurret)
+        holoPos(HGun, Gun:pos())
+        holoAng(HGun, CONFIG["Turret offset",angle])
+        holoColor(HGun, vec4(255,255,0,128))
+        holoVisible(HGun, players(), CONFIG["Debug",number])
+        Gun:parentTo(holoEntity(HGun))
+        RangerGun    = rangerOffset(9999999999, holoEntity(HGun):pos(), holoEntity(HGun):forward())
+        RangerGunPos = RangerGun:position()
+        RangerGunEnt = RangerGun:entity()
+        GunAngPrev   = holoAng(HGun)
+        GunYawDelta  = 0
+        GunYawVol    = 0
+        GunYawPitch  = 50
+        
+        holoCreate(HCam)
+        holoParent(HCam, HTurret)
+        holoPos(HCam, RTCam:entity():pos())
+        holoAng(HCam, CONFIG["Turret offset",angle])
+        holoColor(HCam, vec4(0,255,0,128))
+        holoVisible(HCam, players(), CONFIG["Debug",number])
+        RTCam:entity():parentTo(holoEntity(HCam))
+        RangerCam    = rangerOffset(9999999999, holoEntity(HCam):pos(), holoEntity(HCam):forward())
+        RangerCamPos = RangerCam:position()
+        RangerCamEnt = RangerCam:entity()
+        TargetEnt    = noentity()
+        
+        holoCreate(HLaserGun)
+        holoParent(HLaserGun, HGun)
+        holoPos(HLaserGun, RangerGunPos)
+        holoModel(HLaserGun, "models/holograms/hq_sphere.mdl")
+        holoScale(HLaserGun, vec(1,1,1))
+        holoColor(HLaserGun, vec4(255,0,0,128))
+        holoShadow(HLaserGun, 0)
+        holoVisible(HLaserGun, players(), 0)
+        
+        holoCreate(HLaserCam)
+        holoParent(HLaserCam, HCam)
+        holoPos(HLaserCam, RangerCamPos)
+        holoModel(HLaserCam, "models/holograms/hq_sphere.mdl")
+        holoScale(HLaserCam, vec(1,1,1))
+        holoColor(HLaserCam, vec4(0,0,255,128))
+        holoShadow(HLaserCam, 0)
+        holoVisible(HLaserCam, players(), 0)
+        
+    }
+}
+
+function void updateHoloVis(Player:entity, B_vis:number)
+{
+    holoVisible(HLaserGun, Player, B_vis)
+    holoVisible(HLaserCam, Player, B_vis)
+}
+
+event keyPressed(Player:entity, Key:string, Down:number, Bind:string)
+{
+    if( Player == Pilot )
+    {
+        if( Key == CONTROLS["Lock",string] & Down )
+        {
+            Lock = !Lock
+            if( Lock )
+            {
+                LerpDo = 0
+                LerpStart = curtime()
+                fancyHintDriver("Locked!", PilotSeat)
+                sndPlay(PilotSeat, "Lock")
+                sndPitchLow("Lock")
+                soundVolume("Turret rotate", 0, 1)
+            }
+            else
+            {
+                LerpDo = 1
+                LerpStart = curtime()
+                fancyHintDriver("Un-locked!", PilotSeat)
+                sndPlay(PilotSeat, "Lock")
+                sndPitchHigh("Lock")
+                sndPlay(Turretplate, "Turret rotate")
+                soundVolume("Turret rotate", 0)
+                soundPitch("Turret rotate", 50, 1)
+            }
+        }
+        
+        if( Key == CONTROLS["Zoom in",string] & Down )
+        {
+            MouseScale = clamp(MouseScale - 0.3, 0.3, 0.9)
+            FOV = clamp(FOV / 3, 10, 90)
+            RTCam["FOV",number] = FOV
+            sndPlay(PilotSeat, "Zoom")
+            sndPitchLow("Zoom")
+        }
+        
+        if( Key == CONTROLS["Zoom out",string] & Down )
+        {
+            MouseScale = clamp(MouseScale + 0.3, 0.3, 0.9)
+            FOV = clamp(FOV * 3, 10, 90)
+            RTCam["FOV",number] = FOV
+            sndPlay(PilotSeat, "Zoom")
+            sndPitchHigh("Zoom")
+        }
+        
+        if( Key == CONTROLS["Perspective",string] & Down )
+        {
+            Perspective = !Perspective
+            if( Perspective )
+            {
+                RTCam:entity():deparent()
+                RTCam:entity():setPos(holoEntity(HCam):toWorld(CONFIG["Third person position",vector]))
+                RTCam:entity():setAng(holoAng(HCam))
+                RTCam:entity():parentTo(holoEntity(HCam))
+                sndPlay(PilotSeat, "Perspective")
+                sndPitchLow("Perspective")
+            }
+            else
+            {
+                RTCam:entity():deparent()
+                RTCam:entity():setPos(holoPos(HCam))
+                RTCam:entity():setAng(holoAng(HCam))
+                RTCam:entity():parentTo(holoEntity(HCam))
+                sndPlay(PilotSeat, "Perspective")
+                sndPitchHigh("Perspective")
+            }
+        }
+    }
+}
+
+event playerEnteredVehicle(Player:entity, Vehicle:entity)
+{
+    if( Vehicle == PilotSeat )
+    {
+        Pilot = Player
+        updateHoloVis(Pilot, 1)
+        CamController["Activated",number] = 1
+        CamController["Position",vector]  = PilotSeat:pos() + (PilotSeat:toLocal(Player:attachmentPos("eyes")) / 2)
+        RTCam:entity():propNotSolid(1)
+    }
+}
+
+event playerMove(Player:entity, MoveData:movedata, Command:usercmd)
+{
+    if( Player == Pilot )
+    {
+        MouseDelta = clamp(
+            ang(-Command:getMouseDeltaY() * (CONFIG["Mouse sensitivity",number] * MouseScale), Command:getMouseDeltaX() * (CONFIG["Mouse sensitivity",number] * MouseScale), 0),
+            ang(-50,-50,0),
+            ang(50,50,0)
+        )
+        
+        if( timerExists("Run") )
+        {
+            timerResume("Run")
+        }
+        elseif( !timerExists("Run") )
+        {
+            timer("Run", 0.10, 0, function()
+            {
+                local Cam_aimpoint = (RangerCamPos - holoEntity(HCam):pos()):normalized():toAngle()
+                Mouse = clamp(
+                    angnorm(Cam_aimpoint - MouseDelta),
+                    ang(CONFIG["Pitch limit",vector2][1], CONFIG["Yaw limit",vector2][1], 0),
+                    ang(CONFIG["Pitch limit",vector2][2], CONFIG["Yaw limit",vector2][2], 0)
+                )
+                holoAng(HCam, Mouse)
+                
+                RangerCam    = rangerOffset(9999999999, holoEntity(HCam):pos(), holoEntity(HCam):forward())
+                RangerCamPos = RangerCam:position()
+                RangerCamEnt = RangerCam:entity()
+                holoPos(HLaserCam, RangerCamPos)
+                
+                RangerGun    = rangerOffset(9999999999, holoEntity(HGun):pos(), holoEntity(HGun):forward())
+                RangerGunPos = RangerGun:position()
+                RangerGunEnt = RangerGun:entity()
+                holoPos(HLaserGun, RangerGunPos)
+                
+                if(RangerCamEnt == RangerGunEnt)
+                {
+                    TargetEnt = RangerCamEnt
+                }
+                
+                if( !Lock )
+                {
+                    GunAngPrev = holoAng(HGun)
+                    
+                    if( LerpDo )
+                    {
+                        LerpCur = lerp(0, 0.25, (curtime() - LerpStart) / LerpAnimTime)
+                        
+                        if( LerpCur >= 0.25 )
+                        {
+                            LerpDo = 0
+                            LerpStart = curtime()
+                        }
+                    }
+                    
+                    local Gun_direction = (RangerCamPos - holoEntity(HGun):pos()):normalized()
+                    local Gun_aimpoint  = Gun_direction:toAngle()
+                    
+                    local Turret_ang_from = holoEntity(HTurret):angles()
+                    local Turret_ang_to   = ang(Turret_ang_from[1], Gun_aimpoint[2], Turret_ang_from[3])
+                    local Turret_ang      = slerp(quat(Turret_ang_from), quat(Turret_ang_to), LerpCur):toAngle()
+                    holoAng(HTurret, Turret_ang)
+                    
+                    local Gun_ang_from = holoEntity(HGun):angles()
+                    local Gun_ang_to   = ang(Gun_aimpoint[1], Gun_aimpoint[2], Gun_ang_from[3])
+                    local Gun_ang      = slerp(quat(Gun_ang_from), quat(Gun_ang_to), LerpCur):toAngle()
+                    holoAng(HGun, Gun_ang)
+                    
+                    GunYawDelta = abs((holoAng(HGun) - GunAngPrev):yaw()) * 10
+                    GunYawVol   = GunYawDelta / 100
+                    GunYawPitch = scaleNumber(GunYawDelta, 0, 100, SOUNDS["Turret rotate",array][3,number], SOUNDS["Turret rotate",array][4,number])
+                    soundVolume("Turret rotate", GunYawVol)
+                    soundPitch("Turret rotate", GunYawPitch, 1)
+                }
+            })
+        }
+    }
+}
+
+event playerLeftVehicle(_:entity, Vehicle:entity)
+{
+    if( Vehicle == PilotSeat )
+    {
+        updateHoloVis(Pilot, 0)
+        CamController["Activated",number] = 0
+        Pilot = noentity()
+        if( timerExists("Run") )
+        {
+            timerPause("Run")
+        }
+        RTCam:entity():propNotSolid(0)
+    }
+}
+
+event removed(_:number)
+{
+    Baseplate:deparent()
+    Turretplate:deparent()
+    Gun:deparent()
+    RTCam:entity():deparent()
+}
